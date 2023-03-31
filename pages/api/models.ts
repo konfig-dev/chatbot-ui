@@ -1,5 +1,6 @@
 import { OpenAIModel, OpenAIModelID, OpenAIModels } from '@/types/openai';
 import { OPENAI_API_HOST } from '@/utils/app/const';
+import { Openai } from 'openai-typescript-sdk';
 
 export const config = {
   runtime: 'edge',
@@ -11,34 +12,35 @@ const handler = async (req: Request): Promise<Response> => {
       key: string;
     };
 
-    const response = await fetch(`${OPENAI_API_HOST}/v1/models`, {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key ? key : process.env.OPENAI_API_KEY}`,
-        ...(process.env.OPENAI_ORGANIZATION && {
-          'OpenAI-Organization': process.env.OPENAI_ORGANIZATION,
-        })
-      },
+    const openai = new Openai({
+      apiKey: key ? key : process.env.OPENAI_API_KEY,
+      useFetch: true,
     });
 
+    const response = await openai.models.list();
+
     if (response.status === 401) {
-      return new Response(response.body, {
+      return new Response(response.statusText, {
         status: 500,
         headers: response.headers,
       });
     } else if (response.status !== 200) {
       console.error(
-        `OpenAI API returned an error ${
-          response.status
-        }: ${await response.text()}`,
+        `OpenAI API returned an error ${response.status}: ${response.statusText}`,
       );
       throw new Error('OpenAI API returned an error');
     }
 
-    const json = await response.json();
-
-    const models: OpenAIModel[] = json.data
-      .map((model: any) => {
+    const models: Partial<OpenAIModel>[] = response.data.data
+      .filter((model) => {
+        for (const [key, value] of Object.entries(OpenAIModelID)) {
+          if (value === model.id) {
+            return true;
+          }
+        }
+        return false;
+      })
+      .map((model) => {
         for (const [key, value] of Object.entries(OpenAIModelID)) {
           if (value === model.id) {
             return {
@@ -47,8 +49,8 @@ const handler = async (req: Request): Promise<Response> => {
             };
           }
         }
-      })
-      .filter(Boolean);
+        throw Error('Should not have got here');
+      });
 
     return new Response(JSON.stringify(models), { status: 200 });
   } catch (error) {
