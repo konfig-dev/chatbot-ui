@@ -1,11 +1,5 @@
 import { Message } from '@/types/chat';
 import { OpenAIModel } from '@/types/openai';
-import {
-  createParser,
-  ParsedEvent,
-  ReconnectInterval,
-} from 'eventsource-parser';
-import { OPENAI_API_HOST } from '../app/const';
 import { Openai } from 'openai-typescript-sdk';
 
 export const OpenAIStream = async (
@@ -14,55 +8,27 @@ export const OpenAIStream = async (
   key: string,
   messages: Message[],
 ) => {
-  // const openai = new Openai({
-  //   apiKey: key ? key : process.env.OPENAI_API_KEY,
-  //   useFetch: true,
-  // });
-  console.log({ model, systemPrompt, key, messages });
-  // const response = await openai.chat.createCompletion({
-  //   model: model.id,
-  //   max_tokens: 1000,
-  //   messages: [
-  //     {
-  //       role: 'system',
-  //       content: systemPrompt,
-  //     },
-  //     ...messages,
-  //   ],
-  //   temperature: 1,
-  //   stream: true,
-  // });
-  // console.log(response);
-  const res = await fetch(`${OPENAI_API_HOST}/v1/chat/completions`, {
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key ? key : process.env.OPENAI_API_KEY}`,
-      ...(process.env.OPENAI_ORGANIZATION && {
-        'OpenAI-Organization': process.env.OPENAI_ORGANIZATION,
-      }),
-    },
-    method: 'POST',
-    body: JSON.stringify({
-      model: model.id,
-      messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        ...messages,
-      ],
-      max_tokens: 1000,
-      temperature: 1,
-      stream: true,
-    }),
+  const openai = new Openai({
+    apiKey: key ? key : process.env.OPENAI_API_KEY,
   });
 
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
+  const res = await openai.chat.createCompletionStream({
+    model: model.id,
+    max_tokens: 1000,
+    messages: [
+      {
+        role: 'system',
+        content: systemPrompt,
+      },
+      ...messages,
+    ],
+    temperature: 1,
+  });
 
   if (res.status !== 200) {
+    const decoder = new TextDecoder();
     const statusText = res.statusText;
-    const result = await res.body?.getReader().read();
+    const result = await res.data.getReader().read();
     throw new Error(
       `OpenAI API returned an error: ${
         decoder.decode(result?.value) || statusText
@@ -70,35 +36,5 @@ export const OpenAIStream = async (
     );
   }
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const onParse = (event: ParsedEvent | ReconnectInterval) => {
-        if (event.type === 'event') {
-          const data = event.data;
-
-          if (data === '[DONE]') {
-            controller.close();
-            return;
-          }
-
-          try {
-            const json = JSON.parse(data);
-            const text = json.choices[0].delta.content;
-            const queue = encoder.encode(text);
-            controller.enqueue(queue);
-          } catch (e) {
-            controller.error(e);
-          }
-        }
-      };
-
-      const parser = createParser(onParse);
-
-      for await (const chunk of res.body as any) {
-        parser.feed(decoder.decode(chunk));
-      }
-    },
-  });
-
-  return stream;
+  return res.data;
 };
