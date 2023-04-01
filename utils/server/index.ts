@@ -6,6 +6,7 @@ import {
   ReconnectInterval,
 } from 'eventsource-parser';
 import { OPENAI_API_HOST } from '../app/const';
+import { Openai } from 'openai-typescript-sdk';
 
 export const OpenAIStream = async (
   model: OpenAIModel,
@@ -13,13 +14,32 @@ export const OpenAIStream = async (
   key: string,
   messages: Message[],
 ) => {
+  // const openai = new Openai({
+  //   apiKey: key ? key : process.env.OPENAI_API_KEY,
+  //   useFetch: true,
+  // });
+  console.log({ model, systemPrompt, key, messages });
+  // const response = await openai.chat.createCompletion({
+  //   model: model.id,
+  //   max_tokens: 1000,
+  //   messages: [
+  //     {
+  //       role: 'system',
+  //       content: systemPrompt,
+  //     },
+  //     ...messages,
+  //   ],
+  //   temperature: 1,
+  //   stream: true,
+  // });
+  // console.log(response);
   const res = await fetch(`${OPENAI_API_HOST}/v1/chat/completions`, {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${key ? key : process.env.OPENAI_API_KEY}`,
       ...(process.env.OPENAI_ORGANIZATION && {
         'OpenAI-Organization': process.env.OPENAI_ORGANIZATION,
-      })
+      }),
     },
     method: 'POST',
     body: JSON.stringify({
@@ -43,7 +63,11 @@ export const OpenAIStream = async (
   if (res.status !== 200) {
     const statusText = res.statusText;
     const result = await res.body?.getReader().read();
-    throw new Error(`OpenAI API returned an error: ${decoder.decode(result?.value) || statusText}`);
+    throw new Error(
+      `OpenAI API returned an error: ${
+        decoder.decode(result?.value) || statusText
+      }`,
+    );
   }
 
   const stream = new ReadableStream({
